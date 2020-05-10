@@ -54,7 +54,11 @@ async function fetchArticleLinkNames(url) {
     });
 
     urls = urls.filter((url) => {
-        return url.startsWith('/wiki/') && !url.startsWith('/wiki/File');
+        return url.startsWith('/wiki/')
+            && !url.startsWith('/wiki/File')
+            && !url.startsWith('/wiki/User:')
+            && !url.startsWith('/wiki/Special:')
+            && !url.startsWith('/wiki/Help:');
     });
 
     const articleNames = urls.map((url) => {
@@ -70,12 +74,14 @@ function printPath(path) {
     console.log(`In only ${requests} requests`);
 }
 
-async function searchForTarget(startName, targetName) {
+async function searchForTarget(startName, targetName, depthLimit = Infinity) {
     let queue = [
         [startName]
     ];
 
-    let found = (startName === targetName);
+    if (startName === targetName) {
+        return [startName, targetName];
+    }
 
     const explored = new Set();
     explored.add(startName);
@@ -84,14 +90,24 @@ async function searchForTarget(startName, targetName) {
         const path = queue.shift();
         const node = path[path.length - 1];
 
-        const edges = await fetchArticleLinkNames(makeApiLink(node));
+        const depth = path.length;
 
-        const uniqueEdges = edges.filter((edge) => !explored.has(edge));
+        if (depth > depthLimit) {
+            return null;
+        }
 
-        for (const edge of uniqueEdges) {
+        let edges = await fetchArticleLinkNames(makeApiLink(node));
+
+        edges = edges.map(edge => edge.trim());
+
+        edges = edges.filter((edge, index, self) => { 
+            return self.indexOf(edge) === index;
+        });
+
+        const globallyUnique = edges.filter((edge) => !explored.has(edge));
+
+        for (const edge of globallyUnique) {
             if (edge === targetName) {
-                found = true;
-
                 return path.concat([targetName]);
             }
 
@@ -102,20 +118,23 @@ async function searchForTarget(startName, targetName) {
 
             explored.add(edge);
         }
+
+        console.log(`checked: ${explored.size}, depth: ${depth}, requests: ${requests}, checking: ${node}`);
     }
 }
 
 async function main() {
-    const startingPageName = 'Zvi_Bern';
-    const targetPageName = 'World_War_II';
+    const [ startingPageName, targetPageName ] = ['Elon_Musk', 'Chartreuse_(color)'];
+    
+    const depthLimit = 4;
 
-    const path = await searchForTarget(startingPageName, targetPageName);
+    const path = await searchForTarget(startingPageName, targetPageName, depthLimit);
 
     if (path) {
         printPath(path);
     }
     else {
-        console.error('Failed to find a path');
+        console.error(`Failed to find a path with at a depth of ${depthLimit}`);
     }
 }
 
